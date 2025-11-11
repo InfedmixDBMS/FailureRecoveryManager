@@ -1,21 +1,26 @@
 from FailureRecoveryManager.types.LogRecord import LogRecord
 
 class FailureRecoveryManager:
-    def __init__(self):
-        self.buffer : list[any] = []
-        self.last_lsn : int = 0
+    buffer: list[LogRecord] = []
+    last_lsn: int = 0
 
-    def _save_checkpoint(self):
+    def __new__(cls, *args, **kwargs):
+        raise TypeError("FailureRecoveryManager is a static class and cannot be instantiated")
+
+    @classmethod
+    def _save_checkpoint(cls):
         # TODO : Flush LOG
         # TODO : Save checkpoint to disk
         pass
 
-    def write_log(self, log: LogRecord):
-        self.buffer.append(log)
-        self.last_lsn = log.lsn
+    @classmethod
+    def write_log(cls, log: LogRecord):
+        cls.buffer.append(log)
+        cls.last_lsn = log.lsn
         
 
-    def recover(self):
+    @classmethod
+    def recover(cls):
         # TODO : READ LAST LSN
         # TODO : REPLAY LOG FROM LAST LSN
         pass
