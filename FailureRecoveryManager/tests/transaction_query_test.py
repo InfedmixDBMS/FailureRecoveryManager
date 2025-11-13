@@ -6,19 +6,19 @@ from FailureRecoveryManager.classes.FailureRecoveryManager import FailureRecover
 def main():
     begin_exec = ExecutionResult(
         message="Transaction started",
-        transaction_id="TX123",
+        transaction_id=123,
         query="BEGIN TRANSACTION"
     )
 
     commit_exec = ExecutionResult(
         message="Transaction committed",
-        transaction_id="TX123",
+        transaction_id=123,
         query="COMMIT"
     )
 
     abort_exec = ExecutionResult(
         message="Transaction aborted",
-        transaction_id="TX123",
+        transaction_id=123,
         query="ABORT"
     )
 
@@ -35,5 +35,5 @@ if __name__ == "__main__":
 
 # RESULTS SHOULD BE:
 # FailureRecoveryManager.buffer:
-# 1: <TX123, Start>
-# 2: <TX123, Commit>
+# 1: <123, Start>
+# 2: <123, Commit>
