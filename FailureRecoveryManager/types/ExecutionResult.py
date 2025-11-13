@@ -4,7 +4,7 @@ from typing import Optional, Any
 
 @dataclass
 class ExecutionResult:
-    transaction_id: str
+    transaction_id: int
     timestamp: datetime = datetime.now()
     message: str = ""
     data: Optional[Any] = None # Rows | int
