@@ -1,5 +1,5 @@
 from .LogType import LogType
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import Optional, Any
 
 @dataclass
@@ -25,3 +25,8 @@ class LogRecord:
         if self.log_type == LogType.CHECKPOINT:
             return f"{self.lsn}: <Checkpoint, redo_lsn={self.redo_lsn}>"
         return f"{self.lsn}: <{self.txid}, Unknown>"
+
+    def to_dict(self) -> dict:
+        logdict= asdict(self)
+        logdict["log_type"] = self.log_type.value
+        return logdict
