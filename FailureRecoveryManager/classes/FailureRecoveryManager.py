@@ -1,5 +1,7 @@
 from FailureRecoveryManager.types.LogRecord import LogRecord
 from FailureRecoveryManager.types.LogType import LogType
+from FailureRecoveryManager.types.ExecutionResult import ExecutionResult
+from FailureRecoveryManager.types.RecoverCriteria import RecoverCriteria
 import json, os, time
 
 class FailureRecoveryManager:
@@ -34,13 +36,30 @@ class FailureRecoveryManager:
         cls.last_lsn = checkpoint_rec["lsn"]
 
     @classmethod
-    def write_log(cls, log: LogRecord):
-        cls.buffer.append(log)
-        cls.last_lsn = log.lsn
+    def write_log(cls, execution_result: ExecutionResult):
+        query = execution_result.query.strip().upper()
+        cls.last_lsn += 1
+        lsn = cls.last_lsn
+        txid = execution_result.transaction_id
+
+        if query.startswith("BEGIN"):
+            log = LogRecord(lsn=lsn, txid=txid, log_type=LogType.START)
+            cls.buffer.append(log)
+        elif query.startswith("COMMIT"):
+            log = LogRecord(lsn=lsn, txid=txid, log_type=LogType.COMMIT)
+            cls.buffer.append(log)
+        elif query.startswith("ABORT"):
+            # Also write abort log (optional)
+            cls.recover(RecoverCriteria(transaction_id=txid))
+        else:
+            log = LogRecord(lsn=lsn, txid=txid, log_type=LogType.OPERATION)
+            cls.buffer.append(log)
+            #TODO : add table, key, old_val, new_val after integration 
+            
         
 
     @classmethod
-    def recover(cls):
+    def recover(cls, criteria: RecoverCriteria):
         # TODO : READ LAST LSN
         # TODO : REPLAY LOG FROM LAST LSN
         pass
