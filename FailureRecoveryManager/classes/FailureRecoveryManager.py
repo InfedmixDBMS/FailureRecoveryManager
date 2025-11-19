@@ -8,6 +8,9 @@ class FailureRecoveryManager:
     buffer: list[LogRecord] = []
     last_lsn: int = 0
 
+    # Active Transaction: [txid]
+    active_tx: list[int] = []
+
     def __new__(cls, *args, **kwargs):
         raise TypeError("FailureRecoveryManager is a static class and cannot be instantiated")
 
@@ -16,24 +19,38 @@ class FailureRecoveryManager:
         if not cls.buffer and cls.last_lsn == 0:
             return
 
-        if cls.buffer:
-            for rec in cls.buffer:
-                # TODO : Redirect filepath to actual one in disk
-                cls._append_json_line("wal.log", rec.to_dict()) 
+        for rec in cls.buffer:
+            # TODO : Redirect filepath to actual one in disk
+            cls._append_json_line("wal.log", rec.to_dict()) 
 
-        flushed_lsn = cls.last_lsn
 
-        checkpoint_rec = {
-            "lsn": flushed_lsn + 1,
-            "txid": "CHECKPOINT",
-            "log_type": LogType.CHECKPOINT.value,
-            "timestamp": int(time.time() * 1000),
-        }
+        flushed_lsn = cls.last_lsn + 1
+
+        checkpoint_rec = LogRecord(
+            lsn = flushed_lsn,
+            txid = "CHECKPOINT",
+            log_type = LogType.CHECKPOINT,
+            active_transaction = cls.active_tx
+        )
+
+        # TODO : Redirect filepath to actual one in disk
+        cls._append_json_line("wal.log", checkpoint_rec.to_dict()) 
 
         # TODO : Save checkpoint to disk
 
         cls.buffer.clear()
-        cls.last_lsn = checkpoint_rec["lsn"]
+        cls.last_lsn = flushed_lsn
+
+        # Save metadata for faster recovery
+        meta_path = "last_checkpoint.json"
+        meta_payload = {
+            "checkpoint_lsn": flushed_lsn,
+            "active_tx": cls.active_tx,
+            "timestamp": int(time.time() * 1000),
+        }
+
+        cls._dump_json_file(meta_path, meta_payload)
+
 
     @classmethod
     def write_log(cls, execution_result: ExecutionResult):
@@ -45,12 +62,16 @@ class FailureRecoveryManager:
         if query.startswith("BEGIN"):
             log = LogRecord(lsn=lsn, txid=txid, log_type=LogType.START)
             cls.buffer.append(log)
+            if log.txid not in cls.active_tx:
+                cls.active_tx.append(log.txid)
         elif query.startswith("COMMIT"):
             log = LogRecord(lsn=lsn, txid=txid, log_type=LogType.COMMIT)
             cls.buffer.append(log)
+            cls.active_tx.remove(log.txid)
         elif query.startswith("ABORT"):
             # Also write abort log (optional)
             cls.recover(RecoverCriteria(transaction_id=txid))
+            cls.active_tx.remove(log.txid)
         else:
             log = LogRecord(lsn=lsn, txid=txid, log_type=LogType.OPERATION)
             cls.buffer.append(log)
@@ -64,6 +85,7 @@ class FailureRecoveryManager:
         # TODO : REPLAY LOG FROM LAST LSN
         pass
 
+    @classmethod
     # HELPER JSON-WRITE methods:
     def _append_json_line(cls, path: str, payload: dict):
         # TODO : Make sure directory exists in disk
@@ -73,4 +95,9 @@ class FailureRecoveryManager:
             f.flush
             os.fsync(f.fileno())
 
-    
+    @classmethod
+    def _dump_json_file(cls, meta_path:str, meta_payload:dict):
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(meta_payload, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
