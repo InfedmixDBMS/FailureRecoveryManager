@@ -13,7 +13,7 @@ class LogRecord:
     old_value: Optional[Any] = None
     new_value: Optional[Any] = None
     # CHECKPOINT field
-    redo_lsn: Optional[int] = None   # pointer REDO (untuk CHECKPOINT)
+    active_transaction: Optional[int] = None   # pointer REDO (untuk CHECKPOINT)
 
     def __repr__(self):
         if self.log_type == LogType.START:
