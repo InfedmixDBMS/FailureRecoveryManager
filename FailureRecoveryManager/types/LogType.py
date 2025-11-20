@@ -5,3 +5,4 @@ class LogType(Enum):
     OPERATION = "OPERATION"
     COMMIT = "COMMIT"
     CHECKPOINT = "CHECKPOINT"
+    ABORT = "ABORT"

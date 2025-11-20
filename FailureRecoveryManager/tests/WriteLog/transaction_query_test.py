@@ -16,14 +16,21 @@ def main():
         query="COMMIT"
     )
 
+    begin_exec1 = ExecutionResult(
+        message="Transaction started",
+        transaction_id=124,
+        query="BEGIN TRANSACTION"
+    )
+
     abort_exec = ExecutionResult(
         message="Transaction aborted",
-        transaction_id=123,
+        transaction_id=124,
         query="ABORT"
     )
 
     FailureRecoveryManager.write_log(begin_exec)
     FailureRecoveryManager.write_log(commit_exec)
+    FailureRecoveryManager.write_log(begin_exec1)
     FailureRecoveryManager.write_log(abort_exec)
 
     print("FailureRecoveryManager.buffer:")
@@ -37,3 +44,5 @@ if __name__ == "__main__":
 # FailureRecoveryManager.buffer:
 # 1: <123, Start>
 # 2: <123, Commit>
+# 3: <124, Start>
+# 4: <124, Abort>
