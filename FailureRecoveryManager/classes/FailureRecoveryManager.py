@@ -78,9 +78,9 @@ class FailureRecoveryManager:
             cls.recover(RecoverCriteria(transaction_id=txid))
             cls.active_tx.remove(log.txid)
         else:
-            log = LogRecord(lsn=lsn, txid=txid, log_type=LogType.OPERATION)
+            log = LogRecord(lsn=lsn, txid=txid, log_type=LogType.OPERATION, table=execution_result.table, key=execution_result.key, old_value=execution_result.old_value, new_value=execution_result.new_value)
             cls.buffer.append(log)
-            #TODO : add table, key, old_val, new_val after integration 
+            #TODO : integrate the new execution result attributes
             
         
 
