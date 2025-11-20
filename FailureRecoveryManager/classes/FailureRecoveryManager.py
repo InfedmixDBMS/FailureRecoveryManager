@@ -66,16 +66,21 @@ class FailureRecoveryManager:
                 cls.active_tx.append(log.txid)
         elif query.startswith("COMMIT"):
             log = LogRecord(lsn=lsn, txid=txid, log_type=LogType.COMMIT)
+            if log.txid not in cls.active_tx:
+                raise Exception(f"Transaction {txid} committed without BEGIN")
             cls.buffer.append(log)
             cls.active_tx.remove(log.txid)
         elif query.startswith("ABORT"):
-            # Also write abort log (optional)
+            log = LogRecord(lsn=lsn, txid=txid, log_type=LogType.ABORT)
+            if log.txid not in cls.active_tx:
+                raise Exception(f"Transaction {txid} abort without BEGIN")
+            cls.buffer.append(log)
             cls.recover(RecoverCriteria(transaction_id=txid))
             cls.active_tx.remove(log.txid)
         else:
-            log = LogRecord(lsn=lsn, txid=txid, log_type=LogType.OPERATION)
+            log = LogRecord(lsn=lsn, txid=txid, log_type=LogType.OPERATION, table=execution_result.table, key=execution_result.key, old_value=execution_result.old_value, new_value=execution_result.new_value)
             cls.buffer.append(log)
-            #TODO : add table, key, old_val, new_val after integration 
+            #TODO : integrate the new execution result attributes
             
         
 

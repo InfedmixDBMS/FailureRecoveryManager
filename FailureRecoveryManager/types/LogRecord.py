@@ -24,6 +24,9 @@ class LogRecord:
             return f"{self.lsn}: <{self.txid}, Commit>"
         if self.log_type == LogType.CHECKPOINT:
             return f"{self.lsn}: <Checkpoint, redo_lsn={self.redo_lsn}>"
+        if self.log_type == LogType.ABORT:
+            return f"{self.lsn}: <{self.txid}, Abort>"
+
         return f"{self.lsn}: <{self.txid}, Unknown>"
 
     def to_dict(self) -> dict:
