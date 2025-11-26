@@ -1,6 +1,7 @@
 import json
 import os
 import time
+from datetime import datetime
 
 from FailureRecoveryManager.types.ExecutionResult import ExecutionResult
 from FailureRecoveryManager.types.LogRecord import LogRecord
@@ -99,9 +100,253 @@ class FailureRecoveryManager:
 
     @classmethod
     def recover(cls, criteria: RecoverCriteria):
-        # TODO : READ LAST LSN
-        # TODO : REPLAY LOG FROM LAST LSN
-        pass
+        if criteria.transaction_id is not None:
+            cls._recover_until_transaction(criteria.transaction_id)
+        elif criteria.timestamp is not None:
+            cls._recover_until_timestamp(criteria.timestamp)
+        else:
+            cls._crash_recovery()
+
+    @classmethod
+    def _recover_until_transaction(cls, target_txid: int):
+        # Try to read from disk first, fallback to buffer
+        all_logs = cls._read_all_logs_from_disk()
+        if not all_logs:
+            all_logs = cls.buffer
+
+        print(f"\n=== Recovery Until Transaction {target_txid} ===")
+        print(
+            f"Starting backward recovery from LSN {all_logs[-1].lsn if all_logs else 0}"
+        )
+
+        operations_to_undo = []
+        found_target_start = False
+
+        # Scan backward from the end
+        for i in range(len(all_logs) - 1, -1, -1):
+            log = all_logs[i]
+
+            # Stop condition: found the START of target transaction
+            if log.txid == target_txid and log.log_type == LogType.START:
+                print(f"Reached transaction {target_txid} START at LSN {log.lsn}")
+                found_target_start = True
+                break
+
+            # Collect operations to undo
+            if log.log_type == LogType.OPERATION:
+                operations_to_undo.append(log)
+
+        if not found_target_start:
+            print(f"Warning: Transaction {target_txid} START not found in logs")
+
+        # Undo all collected operations
+        print(f"\nUndoing {len(operations_to_undo)} operations...")
+        for log in operations_to_undo:
+            print(
+                f"  UNDO LSN {log.lsn}: {log.table}.{log.key} from {log.new_value} to {log.old_value} (T{log.txid})"
+            )
+            # TODO: Interface to actual database
+            # database.update(log.table, log.key, log.old_value)
+
+        # Update active transactions
+        # Remove any transactions that were undone
+        undone_txids = {log.txid for log in operations_to_undo}
+        cls.active_tx = [tx for tx in cls.active_tx if tx not in undone_txids]
+
+        print(f"\nRecovery complete. Active transactions: {cls.active_tx}")
+
+    @classmethod
+    def _recover_until_timestamp(cls, target_timestamp):
+        # Read all logs from disk
+        all_logs = cls._read_all_logs_from_disk()
+        if not all_logs:
+            all_logs = cls.buffer
+
+        print(f"\n=== Recovery Until Timestamp {target_timestamp.isoformat()} ===")
+        print(
+            f"Starting backward recovery from LSN {all_logs[-1].lsn if all_logs else 0}"
+        )
+
+        operations_to_undo = []
+        reached_target_time = False
+
+        # Scan backward from the end
+        for i in range(len(all_logs) - 1, -1, -1):
+            log = all_logs[i]
+
+            # Stop condition: found log entry at or before target timestamp
+            if log.timestamp <= target_timestamp:
+                print(
+                    f"Reached target timestamp at LSN {log.lsn} ({log.timestamp.isoformat()})"
+                )
+                reached_target_time = True
+                break
+
+            # Collect operations that occurred after target timestamp
+            if log.log_type == LogType.OPERATION:
+                operations_to_undo.append(log)
+
+        if not reached_target_time and all_logs:
+            print("Warning: All logs are after target timestamp")
+
+        # Undo all collected operations
+        print(
+            f"\nUndoing {len(operations_to_undo)} operations that occurred after target time..."
+        )
+        for log in operations_to_undo:
+            print(
+                f"  UNDO LSN {log.lsn}: {log.table}.{log.key} from {log.new_value} to {log.old_value} (T{log.txid} at {log.timestamp.strftime('%H:%M:%S')})"
+            )
+            # TODO: Interface to actual database
+            # database.update(log.table, log.key, log.old_value)
+
+        # Update active transactions - remove any that had all operations undone
+        # Scan forward from target timestamp to rebuild active_tx list
+        cls.active_tx = []
+        for log in all_logs:
+            if log.timestamp > target_timestamp:
+                break
+            if (
+                log.log_type == LogType.START
+                and log.txid is not None
+                and log.txid not in cls.active_tx
+            ):
+                cls.active_tx.append(log.txid)
+            elif (
+                log.log_type in (LogType.COMMIT, LogType.ABORT)
+                and log.txid in cls.active_tx
+            ):
+                cls.active_tx.remove(log.txid)
+
+        print(
+            f"\nRecovery complete. Active transactions at target time: {cls.active_tx}"
+        )
+
+    @classmethod
+    def _crash_recovery(cls):
+        # Try to read checkpoint metadata
+        checkpoint_lsn = 0
+        active_transactions_at_checkpoint = []
+
+        meta_path = "last_checkpoint.json"
+        if os.path.exists(meta_path):
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+                checkpoint_lsn = meta.get("checkpoint_lsn", 0)
+                active_transactions_at_checkpoint = meta.get("active_tx", [])
+            print(
+                f"Found checkpoint at LSN {checkpoint_lsn}, active transactions: {active_transactions_at_checkpoint}"
+            )
+        else:
+            print("No checkpoint found, starting from beginning")
+
+        # Read all logs from disk
+        all_logs = cls._read_all_logs_from_disk()
+        if not all_logs:
+            print("No logs found on disk, nothing to recover")
+            return
+
+        # Phase 1: ANALYSIS - determine which transactions committed/aborted
+        print("\n--- Phase 1: ANALYSIS ---")
+        committed_tx = set()
+        aborted_tx = set()
+        active_tx = set(active_transactions_at_checkpoint)
+
+        for log in all_logs:
+            if log.lsn <= checkpoint_lsn:
+                continue
+
+            if log.log_type == LogType.START:
+                active_tx.add(log.txid)
+                print(f"  LSN {log.lsn}: T{log.txid} started")
+            elif log.log_type == LogType.COMMIT:
+                if log.txid in active_tx:
+                    active_tx.remove(log.txid)
+                committed_tx.add(log.txid)
+                print(f"  LSN {log.lsn}: T{log.txid} committed")
+            elif log.log_type == LogType.ABORT:
+                if log.txid in active_tx:
+                    active_tx.remove(log.txid)
+                aborted_tx.add(log.txid)
+                print(f"  LSN {log.lsn}: T{log.txid} aborted")
+
+        print(
+            f"\nCommitted: {committed_tx}, Aborted: {aborted_tx}, Active (uncommitted): {active_tx}"
+        )
+
+        # Phase 2: REDO - replay all operations from checkpoint forward
+        print("\n--- Phase 2: REDO ---")
+        redo_count = 0
+        for log in all_logs:
+            if log.lsn <= checkpoint_lsn:
+                continue
+            if log.log_type == LogType.OPERATION:
+                print(
+                    f"  REDO LSN {log.lsn}: {log.table}.{log.key} = {log.new_value} (T{log.txid})"
+                )
+                # TODO: Interface to actual database
+                # database.update(log.table, log.key, log.new_value)
+                redo_count += 1
+        print(f"Replayed {redo_count} operations")
+
+        # Phase 3: UNDO - rollback uncommitted transactions
+        print("\n--- Phase 3: UNDO ---")
+        undo_count = 0
+        for i in range(len(all_logs) - 1, -1, -1):
+            log = all_logs[i]
+            if log.txid in active_tx and log.log_type == LogType.OPERATION:
+                print(
+                    f"  UNDO LSN {log.lsn}: {log.table}.{log.key} from {log.new_value} to {log.old_value} (T{log.txid})"
+                )
+                # TODO: Interface to actual database
+                # database.update(log.table, log.key, log.old_value)
+                undo_count += 1
+        print(f"Rolled back {undo_count} operations from uncommitted transactions")
+
+        # Update in-memory state
+        cls.active_tx = list(active_tx)
+        if all_logs:
+            cls.last_lsn = max(log.lsn for log in all_logs)
+
+        print(f"\n✓ Crash recovery complete. Active transactions: {cls.active_tx}")
+
+    @classmethod
+    def _read_all_logs_from_disk(cls) -> list[LogRecord]:
+        wal_path = "wal.log"
+        if not os.path.exists(wal_path):
+            return []
+
+        logs = []
+        with open(wal_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+
+                log_dict = json.loads(line)
+
+                # Parse timestamp from ISO format string
+                timestamp = (
+                    datetime.fromisoformat(log_dict["timestamp"])
+                    if "timestamp" in log_dict
+                    else datetime.now()
+                )
+
+                # Reconstruct LogRecord from dictionary
+                log = LogRecord(
+                    lsn=log_dict["lsn"],
+                    txid=log_dict.get("txid"),
+                    log_type=LogType(log_dict["log_type"]),
+                    timestamp=timestamp,
+                    table=log_dict.get("table"),
+                    key=log_dict.get("key"),
+                    old_value=log_dict.get("old_value"),
+                    new_value=log_dict.get("new_value"),
+                    active_transactions=log_dict.get("active_transactions"),
+                )
+                logs.append(log)
+
+        return logs
 
     @classmethod
     # HELPER JSON-WRITE methods:
