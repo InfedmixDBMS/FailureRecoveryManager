@@ -6,8 +6,8 @@ from .LogType import LogType
 
 @dataclass
 class LogRecord:
-    lsn: int                    # Log Sequence Number (monotonik)
-    txid: str                   # Tn
+    lsn: int  # Log Sequence Number (monotonik)
+    txid: str  # Tn
     log_type: LogType
     # OPERATION fields:
     table: Optional[str] = None
@@ -15,7 +15,7 @@ class LogRecord:
     old_value: Optional[Any] = None
     new_value: Optional[Any] = None
     # CHECKPOINT field
-    active_transaction: Optional[int] = None   # pointer REDO (untuk CHECKPOINT)
+    active_transaction: Optional[int] = None  # pointer REDO (untuk CHECKPOINT)
 
     def __repr__(self):
         if self.log_type == LogType.START:
@@ -32,6 +32,7 @@ class LogRecord:
         return f"{self.lsn}: <{self.txid}, Unknown>"
 
     def to_dict(self) -> dict:
-        logdict= asdict(self)
+        logdict = asdict(self)
         logdict["log_type"] = self.log_type.value
-        return logdict
+        # Remove None values to keep JSON clean
+        return {k: v for k, v in logdict.items() if v is not None}
