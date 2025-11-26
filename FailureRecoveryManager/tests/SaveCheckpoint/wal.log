@@ -1,6 +1,6 @@
-{"lsn":1,"txid":1,"log_type":"START","table":null,"key":null,"old_value":null,"new_value":null,"active_transaction":null}
-{"lsn":2,"txid":1,"log_type":"OPERATION","table":null,"key":null,"old_value":null,"new_value":null,"active_transaction":null}
-{"lsn":3,"txid":1,"log_type":"COMMIT","table":null,"key":null,"old_value":null,"new_value":null,"active_transaction":null}
-{"lsn":4,"txid":2,"log_type":"START","table":null,"key":null,"old_value":null,"new_value":null,"active_transaction":null}
-{"lsn":5,"txid":2,"log_type":"OPERATION","table":null,"key":null,"old_value":null,"new_value":null,"active_transaction":null}
-{"lsn":6,"txid":"CHECKPOINT","log_type":"CHECKPOINT","table":null,"key":null,"old_value":null,"new_value":null,"active_transaction":[2]}
+{"lsn":1,"txid":1,"log_type":"START"}
+{"lsn":2,"txid":1,"log_type":"OPERATION"}
+{"lsn":3,"txid":1,"log_type":"COMMIT"}
+{"lsn":4,"txid":2,"log_type":"START"}
+{"lsn":5,"txid":2,"log_type":"OPERATION"}
+{"lsn":6,"txid":"CHECKPOINT","log_type":"CHECKPOINT","active_transactions":[2]}
