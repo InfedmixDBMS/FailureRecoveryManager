@@ -1,8 +1,12 @@
+import json
+import os
+import time
+
+from FailureRecoveryManager.types.ExecutionResult import ExecutionResult
 from FailureRecoveryManager.types.LogRecord import LogRecord
 from FailureRecoveryManager.types.LogType import LogType
-from FailureRecoveryManager.types.ExecutionResult import ExecutionResult
 from FailureRecoveryManager.types.RecoverCriteria import RecoverCriteria
-import json, os, time
+
 
 class FailureRecoveryManager:
     buffer: list[LogRecord] = []

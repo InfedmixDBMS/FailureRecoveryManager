@@ -1,6 +1,8 @@
+from dataclasses import asdict, dataclass
+from typing import Any, Optional
+
 from .LogType import LogType
-from dataclasses import dataclass, asdict
-from typing import Optional, Any
+
 
 @dataclass
 class LogRecord:

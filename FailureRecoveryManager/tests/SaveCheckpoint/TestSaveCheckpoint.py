@@ -1,13 +1,17 @@
-import sys, os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 import json
+import os
+import sys
 import unittest
-from FailureRecoveryManager.types.ExecutionResult import ExecutionResult
-from FailureRecoveryManager.classes.FailureRecoveryManager import FailureRecoveryManager as FRM
 
+from FailureRecoveryManager.classes.FailureRecoveryManager import (
+	FailureRecoveryManager as FRM,
+)
+from FailureRecoveryManager.types.ExecutionResult import ExecutionResult
+
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 WAL_PATH = "wal.log"
 META_PATH = "last_checkpoint.json"
-
 
 class TestSaveCheckpoint(unittest.TestCase):
 	def setUp(self):

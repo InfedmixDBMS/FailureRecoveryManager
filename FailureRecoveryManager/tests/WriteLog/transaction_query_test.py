@@ -1,8 +1,11 @@
-import sys, os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-from FailureRecoveryManager.types.ExecutionResult import ExecutionResult
-from FailureRecoveryManager.classes.FailureRecoveryManager import FailureRecoveryManager
+import os
+import sys
 
+from FailureRecoveryManager.classes.FailureRecoveryManager import FailureRecoveryManager
+from FailureRecoveryManager.types.ExecutionResult import ExecutionResult
+
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 def main():
     begin_exec = ExecutionResult(
         message="Transaction started",
