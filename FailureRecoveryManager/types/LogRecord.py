@@ -6,16 +6,24 @@ from .LogType import LogType
 
 @dataclass
 class LogRecord:
+    # Common fields
     lsn: int  # Log Sequence Number (monotonik)
-    txid: str  # Tn
+    txid: Optional[int]  # Tn (None for CHECKPOINT)
     log_type: LogType
-    # OPERATION fields:
+    
+    # OPERATION fields
     table: Optional[str] = None
     key: Optional[Any] = None
     old_value: Optional[Any] = None
     new_value: Optional[Any] = None
+    
     # CHECKPOINT field
-    active_transactions: Optional[Any] = None  # pointer REDO (untuk CHECKPOINT)
+    active_transactions: Optional[list[int]] = None # List of active transaction IDs
+    
+    def __post_init__(self):
+        """Validate that non-checkpoint logs must have a txid"""
+        if self.log_type != LogType.CHECKPOINT and self.txid is None:
+            raise ValueError(f"txid is required for {self.log_type.value} logs")
 
     def __repr__(self):
         if self.log_type == LogType.START:
@@ -29,7 +37,8 @@ class LogRecord:
         if self.log_type == LogType.ABORT:
             return f"{self.lsn}: <{self.txid}, Abort>"
 
-        return f"{self.lsn}: <{self.txid}, Unknown>"
+        txid_str = self.txid if self.txid else "None"
+        return f"{self.lsn}: <{txid_str}, Unknown>"
 
     def to_dict(self) -> dict:
         logdict = asdict(self)

@@ -30,19 +30,6 @@ def run_all_tests():
     print(f"Running tests from: {tests_dir}\n")
     result = runner.run(suite)
 
-    # Print summary
-    print("\n" + "=" * 70)
-    if result.wasSuccessful():
-        print("✓ All tests passed!")
-    else:
-        print("✗ Some tests failed")
-        if result.failures:
-            print(f"  Failures: {len(result.failures)}")
-        if result.errors:
-            print(f"  Errors: {len(result.errors)}")
-    print("=" * 70)
-
-    # Exit with appropriate code (0 for success, 1 for failure)
     return 0 if result.wasSuccessful() else 1
 
 

@@ -124,7 +124,6 @@ class TestSaveCheckpoint(unittest.TestCase):
         # 6: CHECKPOINT record
         ckpt = lines[5]
         self.assertEqual(ckpt["lsn"], 6)
-        self.assertEqual(ckpt["txid"], "CHECKPOINT")
         self.assertEqual(ckpt["log_type"], "CHECKPOINT")
         self.assertEqual(ckpt["active_transactions"], [2])
 

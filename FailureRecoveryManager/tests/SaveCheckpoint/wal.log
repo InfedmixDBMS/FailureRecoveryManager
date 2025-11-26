@@ -3,4 +3,4 @@
 {"lsn":3,"txid":1,"log_type":"COMMIT"}
 {"lsn":4,"txid":2,"log_type":"START"}
 {"lsn":5,"txid":2,"log_type":"OPERATION"}
-{"lsn":6,"txid":"CHECKPOINT","log_type":"CHECKPOINT","active_transactions":[2]}
+{"lsn":6,"log_type":"CHECKPOINT","active_transactions":[2]}

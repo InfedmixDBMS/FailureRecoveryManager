@@ -33,9 +33,9 @@ class FailureRecoveryManager:
 
         checkpoint_rec = LogRecord(
             lsn=flushed_lsn,
-            txid="CHECKPOINT",
+            txid=None,
             log_type=LogType.CHECKPOINT,
-            active_transactions=cls.active_tx,
+            active_transactions=cls.active_tx.copy(),
         )
 
         # TODO : Redirect filepath to actual one in disk
@@ -67,20 +67,23 @@ class FailureRecoveryManager:
             log = LogRecord(lsn=lsn, txid=txid, log_type=LogType.START)
             cls.buffer.append(log)
             if log.txid not in cls.active_tx:
-                cls.active_tx.append(log.txid)
+                cls.active_tx.append(txid)
+
         elif query.startswith("COMMIT"):
             log = LogRecord(lsn=lsn, txid=txid, log_type=LogType.COMMIT)
             if log.txid not in cls.active_tx:
                 raise Exception(f"Transaction {txid} committed without BEGIN")
             cls.buffer.append(log)
-            cls.active_tx.remove(log.txid)
+            cls.active_tx.remove(txid)
+
         elif query.startswith("ABORT"):
             log = LogRecord(lsn=lsn, txid=txid, log_type=LogType.ABORT)
             if log.txid not in cls.active_tx:
                 raise Exception(f"Transaction {txid} abort without BEGIN")
             cls.buffer.append(log)
             cls.recover(RecoverCriteria(transaction_id=txid))
-            cls.active_tx.remove(log.txid)
+            cls.active_tx.remove(txid)
+
         else:
             log = LogRecord(
                 lsn=lsn,
@@ -92,7 +95,7 @@ class FailureRecoveryManager:
                 new_value=execution_result.new_value,
             )
             cls.buffer.append(log)
-            # TODO : integrate the new execution result attributes
+            # TODO : Integrate the new execution result attributes
 
     @classmethod
     def recover(cls, criteria: RecoverCriteria):
