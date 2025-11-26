@@ -1,4 +1,5 @@
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
+from datetime import datetime
 from typing import Any, Optional
 
 from .LogType import LogType
@@ -10,16 +11,17 @@ class LogRecord:
     lsn: int  # Log Sequence Number (monotonik)
     txid: Optional[int]  # Tn (None for CHECKPOINT)
     log_type: LogType
-    
+    timestamp: datetime = field(default_factory=datetime.now)  # Automatic timestamp
+
     # OPERATION fields
     table: Optional[str] = None
     key: Optional[Any] = None
     old_value: Optional[Any] = None
     new_value: Optional[Any] = None
-    
+
     # CHECKPOINT field
     active_transactions: Optional[list[int]] = None # List of active transaction IDs
-    
+
     def __post_init__(self):
         """Validate that non-checkpoint logs must have a txid"""
         if self.log_type != LogType.CHECKPOINT and self.txid is None:
@@ -43,5 +45,7 @@ class LogRecord:
     def to_dict(self) -> dict:
         logdict = asdict(self)
         logdict["log_type"] = self.log_type.value
+        # Convert timestamp to ISO format string for JSON serialization
+        logdict["timestamp"] = self.timestamp.isoformat()
         # Remove None values to keep JSON clean
         return {k: v for k, v in logdict.items() if v is not None}
