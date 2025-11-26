@@ -1,2 +1,7 @@
 # Python bytecode files
 __pycache__/
+
+# IDE specific files
+.zed/
+.vscode/
+.idea/
