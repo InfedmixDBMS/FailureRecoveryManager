@@ -96,7 +96,7 @@ class TestSaveCheckpoint(unittest.TestCase):
 		self.assertEqual(ckpt["lsn"], 6)
 		self.assertEqual(ckpt["txid"], "CHECKPOINT")
 		self.assertEqual(ckpt["log_type"], "CHECKPOINT")
-		self.assertEqual(ckpt["active_transaction"], [2])
+		self.assertEqual(ckpt["active_transactions"], [2])
 
         # Cek last checkpoint
 		self.assertTrue(os.path.exists(META_PATH), "last_checkpoint.json should be created")

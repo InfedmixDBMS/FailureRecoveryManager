@@ -12,11 +12,13 @@ class FailureRecoveryManager:
     buffer: list[LogRecord] = []
     last_lsn: int = 0
 
-    # Active Transaction: [txid]
+    # Active Transactions: [txid]
     active_tx: list[int] = []
 
     def __new__(cls, *args, **kwargs):
-        raise TypeError("FailureRecoveryManager is a static class and cannot be instantiated")
+        raise TypeError(
+            "FailureRecoveryManager is a static class and cannot be instantiated"
+        )
 
     @classmethod
     def _save_checkpoint(cls):
@@ -25,20 +27,19 @@ class FailureRecoveryManager:
 
         for rec in cls.buffer:
             # TODO : Redirect filepath to actual one in disk
-            cls._append_json_line("wal.log", rec.to_dict()) 
-
+            cls._append_json_line("wal.log", rec.to_dict())
 
         flushed_lsn = cls.last_lsn + 1
 
         checkpoint_rec = LogRecord(
-            lsn = flushed_lsn,
-            txid = "CHECKPOINT",
-            log_type = LogType.CHECKPOINT,
-            active_transaction = cls.active_tx
+            lsn=flushed_lsn,
+            txid="CHECKPOINT",
+            log_type=LogType.CHECKPOINT,
+            active_transactions=cls.active_tx,
         )
 
         # TODO : Redirect filepath to actual one in disk
-        cls._append_json_line("wal.log", checkpoint_rec.to_dict()) 
+        cls._append_json_line("wal.log", checkpoint_rec.to_dict())
 
         # TODO : Save checkpoint to disk
 
@@ -54,7 +55,6 @@ class FailureRecoveryManager:
         }
 
         cls._dump_json_file(meta_path, meta_payload)
-
 
     @classmethod
     def write_log(cls, execution_result: ExecutionResult):
@@ -82,11 +82,17 @@ class FailureRecoveryManager:
             cls.recover(RecoverCriteria(transaction_id=txid))
             cls.active_tx.remove(log.txid)
         else:
-            log = LogRecord(lsn=lsn, txid=txid, log_type=LogType.OPERATION, table=execution_result.table, key=execution_result.key, old_value=execution_result.old_value, new_value=execution_result.new_value)
+            log = LogRecord(
+                lsn=lsn,
+                txid=txid,
+                log_type=LogType.OPERATION,
+                table=execution_result.table,
+                key=execution_result.key,
+                old_value=execution_result.old_value,
+                new_value=execution_result.new_value,
+            )
             cls.buffer.append(log)
-            #TODO : integrate the new execution result attributes
-            
-        
+            # TODO : integrate the new execution result attributes
 
     @classmethod
     def recover(cls, criteria: RecoverCriteria):
@@ -105,7 +111,7 @@ class FailureRecoveryManager:
             os.fsync(f.fileno())
 
     @classmethod
-    def _dump_json_file(cls, meta_path:str, meta_payload:dict):
+    def _dump_json_file(cls, meta_path: str, meta_payload: dict):
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump(meta_payload, f, ensure_ascii=False, indent=2)
             f.flush()
