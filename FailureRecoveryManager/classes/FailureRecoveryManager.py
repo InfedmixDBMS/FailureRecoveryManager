@@ -3,15 +3,17 @@ import os
 import time
 from datetime import datetime
 
-from FailureRecoveryManager.types.ExecutionResult import ExecutionResult
-from FailureRecoveryManager.types.LogRecord import LogRecord
-from FailureRecoveryManager.types.LogType import LogType
-from FailureRecoveryManager.types.RecoverCriteria import RecoverCriteria
+from ..types.ExecutionResult import ExecutionResult
+from ..types.LogRecord import LogRecord
+from ..types.LogType import LogType
+from ..types.RecoverCriteria import RecoverCriteria
 
+from typing import Optional, Any
 
 class FailureRecoveryManager:
     buffer: list[LogRecord] = []
     last_lsn: int = 0
+    _initialized: bool = False
 
     # Active Transactions: [txid]
     active_tx: list[int] = []
@@ -20,6 +22,42 @@ class FailureRecoveryManager:
         raise TypeError(
             "FailureRecoveryManager is a static class and cannot be instantiated"
         )
+    
+    @classmethod
+    def _initialize(cls):
+        if cls._initialized:
+            return
+        
+        # Try to load from checkpoint metadata first
+        meta_path = "storage/last_checkpoint.json"
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, "r") as f:
+                    meta = json.load(f)
+                    cls.last_lsn = meta.get("checkpoint_lsn", 0)
+                    cls.active_tx = meta.get("active_tx", [])
+                    cls._initialized = True
+                    return
+            except Exception as e:
+                print(f"[FRM] Warning: Failed to load checkpoint metadata: {e}")
+        
+        # Fallback: scan WAL log to find highest LSN
+        wal_path = "wal.log"
+        if os.path.exists(wal_path):
+            try:
+                with open(wal_path, "r") as f:
+                    for line in f:
+                        try:
+                            record = json.loads(line.strip())
+                            lsn = record.get("lsn", 0)
+                            if lsn > cls.last_lsn:
+                                cls.last_lsn = lsn
+                        except:
+                            continue
+            except Exception as e:
+                print(f"[FRM] Warning: Failed to read WAL log: {e}")
+        
+        cls._initialized = True
 
     @classmethod
     def _save_checkpoint(cls):
@@ -58,7 +96,9 @@ class FailureRecoveryManager:
         cls._dump_json_file(meta_path, meta_payload)
 
     @classmethod
-    def write_log(cls, execution_result: ExecutionResult):
+    def write_log(cls, execution_result: ExecutionResult, table:str, key:Optional[Any], old_value:Optional[Any], new_value:Optional[Any]):
+        # Initialize on first use
+        cls._initialize()
         query = execution_result.query.strip().upper()
         cls.last_lsn += 1
         lsn = cls.last_lsn
@@ -90,10 +130,10 @@ class FailureRecoveryManager:
                 lsn=lsn,
                 txid=txid,
                 log_type=LogType.OPERATION,
-                table=execution_result.table,
-                key=execution_result.key,
-                old_value=execution_result.old_value,
-                new_value=execution_result.new_value,
+                table=table,
+                key=key,
+                old_value=old_value,
+                new_value=new_value,
             )
             cls.buffer.append(log)
             # TODO : Integrate the new execution result attributes
