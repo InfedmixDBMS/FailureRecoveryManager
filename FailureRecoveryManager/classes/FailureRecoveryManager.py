@@ -10,6 +10,24 @@ from ..types.RecoverCriteria import RecoverCriteria
 
 from typing import Optional, Any
 
+# Storage Manager
+try:
+    from StorageManager.classes.API import StorageEngine
+    from StorageManager.classes.DataModels import (
+        DataRetrieval,
+        DataWrite,
+        DataDeletion,
+        Condition,
+        Operation,
+    )
+except Exception:
+    StorageEngine = None
+    DataRetrieval = None
+    DataWrite = None
+    DataDeletion = None
+    Condition = None
+    Operation = None
+
 class FailureRecoveryManager:
     buffer: list[LogRecord] = []
     last_lsn: int = 0
@@ -77,16 +95,12 @@ class FailureRecoveryManager:
             active_transactions=cls.active_tx.copy(),
         )
 
-        # TODO : Redirect filepath to actual one in disk
         cls._append_json_line("wal.log", checkpoint_rec.to_dict())
-
-        # TODO : Save checkpoint to disk
 
         cls.buffer.clear()
         cls.last_lsn = flushed_lsn
 
-        # Save metadata for faster recovery
-        meta_path = "last_checkpoint.json"
+        meta_path = "storage/last_checkpoint.json"
         meta_payload = {
             "checkpoint_lsn": flushed_lsn,
             "active_tx": cls.active_tx,
@@ -121,8 +135,8 @@ class FailureRecoveryManager:
             log = LogRecord(lsn=lsn, txid=txid, log_type=LogType.ABORT)
             if log.txid not in cls.active_tx:
                 raise Exception(f"Transaction {txid} abort without BEGIN")
-            cls.buffer.append(log)
             cls.recover(RecoverCriteria(transaction_id=txid))
+            cls.buffer.append(log)
             cls.active_tx.remove(txid)
 
         else:
@@ -158,15 +172,13 @@ class FailureRecoveryManager:
 
             # Only process OPERATION logs for this transaction
             if log.txid == txid and log.log_type == LogType.OPERATION:
-                # Apply UNDO: restore old_value
-                # In a real system, this would update the actual database
-                # For now, we log the undo operation conceptually
-                # The actual database update would happen via a callback or interface
                 print(
                     f"UNDO: Restoring {log.table}.{log.key} from {log.new_value} to {log.old_value}"
                 )
-                # TODO: Interface to actual database to restore old_value
-                # e.g., database.update(log.table, log.key, log.old_value)
+                try:
+                    cls._apply_undo(log)
+                except Exception as e:
+                    print(f"[FRM] UNDO error: {e}")
 
     @classmethod
     def _recover_to_timestamp(cls, timestamp):
@@ -211,8 +223,10 @@ class FailureRecoveryManager:
                 print(
                     f"REDO: Applying {log.table}.{log.key} = {log.new_value} (T{log.txid})"
                 )
-                # TODO: Interface to actual database
-                # database.update(log.table, log.key, log.new_value)
+                try:
+                    cls._apply_redo(log)
+                except Exception as e:
+                    print(f"[FRM] REDO error: {e}")
 
         # Phase 3: UNDO - Roll back operations after timestamp
         # Scan in reverse to undo operations that happened after target time
@@ -221,8 +235,10 @@ class FailureRecoveryManager:
             print(
                 f"UNDO: Restoring {log.table}.{log.key} from {log.new_value} to {log.old_value} (T{log.txid})"
             )
-            # TODO: Interface to actual database
-            # database.update(log.table, log.key, log.old_value)
+            try:
+                cls._apply_undo(log)
+            except Exception as e:
+                print(f"[FRM] UNDO error: {e}")
 
         # Phase 4: UNDO - Roll back active (uncommitted) transactions at timestamp
         # These transactions were started but not committed before timestamp
@@ -232,8 +248,10 @@ class FailureRecoveryManager:
                 print(
                     f"UNDO: Restoring {log.table}.{log.key} from {log.new_value} to {log.old_value} (T{log.txid} uncommitted)"
                 )
-                # TODO: Interface to actual database
-                # database.update(log.table, log.key, log.old_value)
+                try:
+                    cls._apply_undo(log)
+                except Exception as e:
+                    print(f"[FRM] UNDO error: {e}")
 
         # Update in-memory state
         cls.active_tx = list(active_at_timestamp)
@@ -284,8 +302,10 @@ class FailureRecoveryManager:
             if log.log_type == LogType.OPERATION:
                 # REDO: Apply new_value for all operations
                 print(f"REDO: Applying {log.table}.{log.key} = {log.new_value}")
-                # TODO: Interface to actual database
-                # database.update(log.table, log.key, log.new_value)</parameter>
+                try:
+                    cls._apply_redo(log)
+                except Exception as e:
+                    print(f"[FRM] REDO error: {e}")
 
         # Phase 3: UNDO - rollback uncommitted transactions
         # Scan logs in reverse for active (uncommitted) transactions
@@ -296,8 +316,10 @@ class FailureRecoveryManager:
                 print(
                     f"UNDO: Restoring {log.table}.{log.key} from {log.new_value} to {log.old_value}"
                 )
-                # TODO: Interface to actual database
-                # database.update(log.table, log.key, log.old_value)
+                try:
+                    cls._apply_undo(log)
+                except Exception as e:
+                    print(f"[FRM] UNDO error: {e}")
 
         # Update in-memory state
         cls.active_tx = list(active_tx)
@@ -349,7 +371,7 @@ class FailureRecoveryManager:
         line = json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
         with open(path, "a", encoding="utf-8") as f:
             f.write(line)
-            f.flush
+            f.flush()
             os.fsync(f.fileno())
 
     @classmethod
@@ -358,3 +380,130 @@ class FailureRecoveryManager:
             json.dump(meta_payload, f, ensure_ascii=False, indent=2)
             f.flush()
             os.fsync(f.fileno())
+
+    # Helpers
+    @classmethod
+    def _get_non_system_columns(cls, table: str):
+        if StorageEngine is None:
+            raise RuntimeError("StorageEngine unavailable for recovery operations")
+        cols = StorageEngine.load_schema_names(table)
+        return [c for c in cols if c != "__row_id"]
+
+    @classmethod
+    def _read_rows(cls, table: str, conditions):
+        req = DataRetrieval(table=table, column=[], conditions=[])
+        setattr(req, "conditions", conditions)
+        return StorageEngine.read_block(req)
+
+    @classmethod
+    def _delete_rows(cls, table: str, conditions) -> int:
+        del_req = DataDeletion(table=table, conditions=conditions)
+        return StorageEngine.delete_block(del_req)
+
+    @classmethod
+    def _insert_rows(cls, table: str, columns, rows) -> int:
+        write_req = DataWrite(table=table, column=columns, conditions=[], new_value=rows)
+        return StorageEngine.write_block(write_req)
+
+    @classmethod
+    def _merge_row(cls, col_names, base_row, updates):
+        merged = []
+        for c in col_names:
+            if c in updates:
+                merged.append(updates[c])
+            else:
+                merged.append(base_row.get(c))
+        return merged
+
+    @classmethod
+    def _apply_redo(cls, log: LogRecord) -> None:
+        if StorageEngine is None:
+            raise RuntimeError("StorageEngine unavailable for recovery operations")
+
+        table = log.table
+        key = log.key
+        new_vals = log.new_value or {}
+        old_vals = log.old_value or {}
+
+        cols = cls._get_non_system_columns(table)
+
+        # locate row by 'id' if present, else by __row_id
+        conditions = []
+        
+        if "id" in old_vals:
+            conditions.append(Condition("id", Operation.EQ, old_vals["id"]))
+        elif key is not None:
+            conditions.append(Condition("__row_id", Operation.EQ, key))    
+
+        current = cls._read_rows(table, conditions)
+
+        # If nothing found and this is INSERT (old_value None), re-insert new_value
+        if (not current or not current.data):
+            if not old_vals and new_vals:
+                row = [new_vals.get(c) for c in cols]
+                cls._insert_rows(table, cols, [row])
+            return
+
+        # delete matched rows then insert merged rows
+        updated_rows = []
+        for row in current.data:
+            row_dict = {col: row[idx] for idx, col in enumerate(current.columns)}
+            base = {c: row_dict.get(c) for c in cols}
+            merged = cls._merge_row(cols, base, new_vals)
+            updated_rows.append(merged)
+
+        # Delete matched rows (same conditions)
+        cls._delete_rows(table, conditions)
+        # Insert merged
+        if updated_rows:
+            cls._insert_rows(table, cols, updated_rows)
+
+    @classmethod
+    def _apply_undo(cls, log: LogRecord) -> None:
+        if StorageEngine is None:
+            raise RuntimeError("StorageEngine unavailable for recovery operations")
+
+        table = log.table
+        key = log.key
+        new_vals = log.new_value or {}
+        old_vals = log.old_value or {}
+
+        cols = cls._get_non_system_columns(table)
+
+        # kalo INSERT (no old_value), UNDO is delete the inserted row
+        if not old_vals and new_vals:
+            # Try __row_id first, else by values
+            conditions = []
+            if key is not None:
+                conditions.append(Condition("__row_id", Operation.EQ, key))
+            else:
+                for k, v in new_vals.items():
+                    conditions.append(Condition(k, Operation.EQ, v))
+            cls._delete_rows(table, conditions)
+            try:
+                clr_exec = ExecutionResult(success=True, transaction_id=log.txid, query="UNDO")
+                cls.write_log(clr_exec, table=table, key=key, old_value=new_vals, new_value=None)
+            except Exception as e:
+                pass
+            return
+
+        # For UPDATE/DELETE (have old_value):
+        # delete any rows that match the "new" state (id plus new fields)
+        delete_conditions = []
+        if "id" in old_vals:
+            delete_conditions.append(Condition("id", Operation.EQ, old_vals["id"]))
+        for k, v in new_vals.items():
+            delete_conditions.append(Condition(k, Operation.EQ, v))
+        if delete_conditions:
+            cls._delete_rows(table, delete_conditions)
+
+        # re-insert the old row content
+        if old_vals:
+            old_row = [old_vals.get(c) for c in cols]
+            cls._insert_rows(table, cols, [old_row])
+            try:
+                clr_exec = ExecutionResult(success=True, transaction_id=log.txid, query="UNDO")
+                cls.write_log(clr_exec, table=table, key=key, old_value=old_vals, new_value=None)
+            except Exception as e:
+                pass
+            
